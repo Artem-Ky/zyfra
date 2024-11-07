@@ -1,0 +1,19 @@
+{
+  "name": "websockets",
+  "version": "1.0.0",
+  "main": "client.js",
+  "scripts": {
+    "test": "jest",
+    "start:client": "node client.js ws://localhost:8080",
+    "start:server": "node server.js localhost 8080"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
