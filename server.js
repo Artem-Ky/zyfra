@@ -1,4 +1,8 @@
+const express = require('express');
+const http = require('http');
 const WebSocket = require('ws');
+const swaggerJsdoc = require('swagger-jsdoc');
+const swaggerUi = require('swagger-ui-express');
 
 const args = process.argv.slice(2);
 const address = args[0];
@@ -9,10 +13,32 @@ if (!address || !port) {
   process.exit(1);
 }
 
-const server = new WebSocket.Server({ port: parseInt(port) }, () => {
-  console.log(`Сервер запущен на ws://${address}:${port}`);
-});
+const app = express();
+const serverHTTP = http.createServer(app);
+const server = new WebSocket.Server({ server: serverHTTP });
 
+// Swagger
+const swaggerOptions = {
+  swaggerDefinition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'WebSocket Server API',
+      version: '1.0.0',
+      description: 'API swagger',
+    },
+    servers: [
+      {
+        url: `http://${address}:${port}`,
+      },
+    ],
+  },
+  apis: ['./server.js'],
+};
+
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+//  WebSocket
 server.on('connection', (ws) => {
   console.log('Клиент подключен');
 
@@ -37,6 +63,7 @@ server.on('connection', (ws) => {
   });
 });
 
+//  рассылка сообщений
 function broadcastMessage(message, sender) {
   server.clients.forEach((client) => {
     if (client !== sender && client.readyState === WebSocket.OPEN) {
@@ -45,12 +72,50 @@ function broadcastMessage(message, sender) {
   });
 }
 
+app.use(express.json());
+
+/**
+ * @swagger
+ * /send-message:
+ *   post:
+ *     summary: Отправить сообщение всем подключенным клиентам
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               message:
+ *                 type: string
+ *                 example: тестовое сообщение!
+ *     responses:
+ *       200:
+ *         description: Сообщение отправлено всем клиентам
+ */
+app.post('/send-message', (req, res) => {
+  const { message } = req.body;
+  const serverMessage = {
+    event: 'message',
+    message,
+  };
+  broadcastMessage(serverMessage, null);
+  res.json({ status: 'Сообщение отправлено всем клиентам' });
+});
+
+//  Ввод сообщения через консоль
 process.stdin.on('data', (data) => {
   const serverMessage = {
     event: 'message',
     message: data.toString().trim(),
   };
   broadcastMessage(serverMessage, null);
+});
+
+serverHTTP.listen(port, address, () => {
+  console.log(`HTTP сервер запущен на http://${address}:${port}`);
+  console.log(`WebSocket сервер запущен на ws://${address}:${port}`);
+  console.log(`Swagger документация доступна на http://${address}:${port}/api-docs`);
 });
 
 module.exports = server;
