@@ -1,8 +1,31 @@
+const { Client } = require('pg');
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
+
+
+//  PostgreSQL connection
+const dbClient = new Client({
+  user: 'postgres',
+  host: 'localhost',
+  database: 'websockets',
+  password: '0000',
+  port: 5432,
+});
+
+(async () => {
+  try {
+    await dbClient.connect();
+    console.log('Подключение к PostgreSQL успешно установлено');
+
+    await dbClient.query('LISTEN notifications_channel');
+    console.log('Подписка на notifications_channel выполнена');
+  } catch (err) {
+    console.error('Ошибка подключения к PostgreSQL:', err);
+  }
+})();
 
 const args = process.argv.slice(2);
 const address = args[0];
@@ -74,11 +97,12 @@ function broadcastMessage(message, sender) {
 
 app.use(express.json());
 
+
 /**
  * @swagger
- * /send-message:
+ * /add-notification:
  *   post:
- *     summary: Отправить сообщение всем подключенным клиентам
+ *     summary: Разослать уведомление
  *     requestBody:
  *       required: true
  *       content:
@@ -88,20 +112,43 @@ app.use(express.json());
  *             properties:
  *               message:
  *                 type: string
- *                 example: тестовое сообщение!
+ *                 example: Уведомление!
  *     responses:
  *       200:
- *         description: Сообщение отправлено всем клиентам
+ *         description: Уведомление успешно разослано!
  */
-app.post('/send-message', (req, res) => {
+app.post('/add-notification', async (req, res) => {
   const { message } = req.body;
-  const serverMessage = {
-    event: 'message',
-    message,
-  };
-  broadcastMessage(serverMessage, null);
-  res.json({ status: 'Сообщение отправлено всем клиентам' });
+
+  try {
+    const result = await dbClient.query(
+      'INSERT INTO notifications (message, send_at) VALUES ($1, NOW()) RETURNING *',
+      [message]
+    );
+
+    res.json({ status: 'Уведомление добавлено', notification: result.rows[0] });
+  } catch (err) {
+    console.error('Ошибка добавления уведомления:', err.message);
+    res.status(500).json({ error: 'Ошибка добавления уведомления' });
+  }
 });
+
+
+dbClient.on('notification', (msg) => {
+  try {
+    const payload = JSON.parse(msg.payload);
+    console.log('Получено уведомление из базы:', payload);
+
+    const serverMessage = {
+      event: 'message',
+      message: payload.message.toString().trim(),
+    };
+    broadcastMessage(serverMessage, null);
+  } catch (err) {
+    console.error('Ошибка обработки уведомления:', err);
+  }
+});
+
 
 //  Ввод сообщения через консоль
 process.stdin.on('data', (data) => {
