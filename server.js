@@ -20,6 +20,8 @@ const dbClient = new Client({
     await dbClient.connect();
     console.log('Подключение к PostgreSQL успешно установлено');
 
+    await initializeDatabase();
+
     await dbClient.query('LISTEN notifications_channel');
     console.log('Подписка на notifications_channel выполнена');
   } catch (err) {
@@ -116,6 +118,8 @@ app.use(express.json());
  *     responses:
  *       200:
  *         description: Уведомление успешно разослано!
+ *       500:
+ *         description: Ошибка добавления уведомления
  */
 app.post('/add-notification', async (req, res) => {
   const { message } = req.body;
@@ -132,6 +136,32 @@ app.post('/add-notification', async (req, res) => {
     res.status(500).json({ error: 'Ошибка добавления уведомления' });
   }
 });
+
+/**
+ * @swagger
+ * /server-info:
+ *   get:
+ *     summary: Получить WebSocket URL
+ *     responses:
+ *       200:
+ *         description: WebSocket URL успешно получен
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 websocketUrl:
+ *                   type: string
+ *                   example: ws://127.0.0.1:8080
+ *       500:
+ *         description: Ошибка при получении информации о сервере
+ */
+app.get('/server-info', (req, res) => {
+  const websocketUrl = `ws://${address}:${port}`;
+  res.json({ websocketUrl });
+});
+
+
 
 
 dbClient.on('notification', (msg) => {
@@ -164,5 +194,23 @@ serverHTTP.listen(port, address, () => {
   console.log(`WebSocket сервер запущен на ws://${address}:${port}`);
   console.log(`Swagger документация доступна на http://${address}:${port}/api-docs`);
 });
+
+async function initializeDatabase() {
+  try {
+    await dbClient.query(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id SERIAL PRIMARY KEY,
+        message TEXT NOT NULL,
+        send_at TIMESTAMP DEFAULT NOW(),
+        sent BOOLEAN DEFAULT FALSE
+      )
+    `);
+
+    console.log('Таблица создана или существует');
+  } catch (err) {
+    console.error('Ошибка инициализации базы данных:', err.message);
+    process.exit(1);
+  }
+}
 
 module.exports = server;
